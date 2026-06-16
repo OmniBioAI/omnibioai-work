@@ -1,0 +1,45 @@
+# All runtime-generated content — not tracked
+runs/*
+workflow_runner_runs/*
+workflow_runner_exec/*
+fastq_qc_runs/*
+fastq_trimmer_runs/*
+pathway_enrichment_runs/*
+out/*
+storage/*
+object_storage/*
+objects/*
+
+# Keep directory structure
+!**/.gitkeep
+
+# Common output file extensions
+*.bam
+*.bai
+*.vcf
+*.vcf.gz
+*.bcf
+*.cram
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bed.gz
+*.bigwig
+*.bw
+*.h5
+*.h5ad
+*.hdf5
+*.loom
+*.rds
+*.RData
+*.tar.gz
+*.zip
+*.sif
+*.log
+*.tmp
+*.temp
+
+# OS
+.DS_Store
+Thumbs.db
