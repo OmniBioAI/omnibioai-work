@@ -42,7 +42,8 @@ objects/*
 
 # OS
 .DS_Store
-Thumbs.dbobject_registry.json
+Thumbs.db
+object_registry.json
 object_storage/
 objects/
 out/
