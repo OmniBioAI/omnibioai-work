@@ -22,5 +22,21 @@
     "opened_at": "2026-07-25",
     "status": "open",
     "area": "CI/CD Health / Infra"
+  },
+  {
+    "title": "audit:events entries with endpoint=http://testserver/... predating 2026-07-25 are test-suite artifacts, not real traffic",
+    "description": "Investigated a repeated upstream_forward(deny/500) -> request(allow/200) pattern for the same trace_id in audit:events (e.g. trace_ids e0dfd723, 82d2d69f), all on GET workbench/ and GET workbench/ping. Root cause: omnibioai-api-gateway's route handler (app/routes/gateway.py) returned a bare dict as the response body, which FastAPI always serializes as HTTP 200 regardless of the real upstream status -- so a genuinely failing/unreachable upstream was both (a) returned to real callers as a 200 with the error hidden in the body, and (b) logged twice with contradictory status codes (upstream_forward carried the true 500, request carried the masked 200), 0-15ms apart, same trace_id. Separately, the entire 210-event sample of this pattern (2026-06-16 through 2026-07-19) turned out to be omnibioai-api-gateway's own pytest suite (tests/test_gateway_router.py and friends) writing into this same shared Redis stream: the test fixtures never mocked ProxyClient.forward() or the audit Redis client, so every local/CI test run made a real (failing) network call to an unreachable 'workbench' host and logged real entries under endpoint=http://testserver/... (the hostname Starlette's TestClient uses). Both root causes are now fixed in omnibioai-api-gateway (commits: gateway status-code propagation via JSONResponse(content=response, status_code=status); test isolation via an autouse conftest fixture mocking both ProxyClient.forward and the audit Redis client). Historical entries before the fix were left in place per instruction -- do not treat pre-2026-07-25 testserver-hostname entries in audit:events as evidence of real gateway/workbench incidents.",
+    "severity": "low",
+    "opened_at": "2026-07-25",
+    "status": "resolved",
+    "area": "API Gateway / Audit Trail"
+  },
+  {
+    "title": "policy-engine crashes on cached policy decisions (PolicyDecision() duplicate 'policy_source' kwarg)",
+    "description": "Discovered incidentally while validating the api-gateway upstream_forward fix against the live stack: issuing the same user+action policy evaluation twice within the cache TTL causes omnibioai-policy-engine's app/core/engine.py evaluate() to raise `TypeError: app.models.decision.PolicyDecision() got multiple values for keyword argument 'policy_source'` at `PolicyDecision(**cached, policy_source=\"CACHE\")` (the cached dict already contains a policy_source key). policy-engine returns HTTP 500 for /policy/evaluate on the cache-hit path; the gateway's PolicyClient.evaluate() catches the exception and fails closed with {\"allowed\": false, \"reason\": \"policy_error\"}, so the real symptom at the gateway is a spurious 403 forbidden/policy_error on requests that should be allowed, specifically on repeat requests to the same resource. Not fixed -- out of scope for the api-gateway work in progress. Needs a fix in omnibioai-policy-engine's cache-read path (likely just dropping policy_source from the cached dict before re-adding it, or not re-passing it at all).",
+    "severity": "medium",
+    "opened_at": "2026-07-25",
+    "status": "open",
+    "area": "Policy Engine"
   }
 ]
