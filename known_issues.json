@@ -14,5 +14,13 @@
     "opened_at": "2026-07-24",
     "status": "acknowledged",
     "area": "TES / Plugins"
+  },
+  {
+    "title": "No npm in control-center container -- CI/CD Health can't vuln-scan JS repos in production",
+    "description": "The control-center Dockerfile's Node/npm toolchain only exists in the separate frontend-builder build stage; the final backend runtime image never copies it in, so `which npm` fails inside the running container. _run_vuln_scan()'s npm-audit branch is correctly written but unreachable from the real report-generation path (the scheduler and POST /report/generate) -- the 4 npm-manifest repos (omnibioai-studio, omnibioai-design-tokens, omnibioai-ui, omnibioai-launcher) always show vuln_count=None (\"--\") when scanned in-container, even though npm audit works fine when run manually on a host that has npm. pip-audit scanning for the 21 Python repos is unaffected and was fixed separately. Not fixed as part of that fix -- needs its own Dockerfile/build-stage change (e.g. installing npm in the backend stage, or copying a minimal node/npm from the frontend-builder stage) as deliberate follow-up work.",
+    "severity": "low",
+    "opened_at": "2026-07-25",
+    "status": "open",
+    "area": "CI/CD Health / Infra"
   }
 ]
