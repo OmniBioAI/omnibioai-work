@@ -1,0 +1,18 @@
+[
+  {
+    "title": "GPU reports N/A for memory via nvidia-smi",
+    "description": "nvidia-smi --query-gpu=memory.total,memory.used returns [N/A] on this GB10 unified-memory system, both from the host and from inside the control-center container post-GPU-passthrough. Utilization/temperature/power all report normally. Confirmed live via /gpu endpoint.",
+    "severity": "medium",
+    "opened_at": "2026-07-24",
+    "status": "acknowledged",
+    "area": "GPU / Infra"
+  },
+  {
+    "title": "x86 tools run under QEMU emulation (ARM64 host)",
+    "description": "amd64 plugin images and some training scripts run via qemu-binfmt emulation, not native -- observed as a single process pinned near 100% CPU. CPU-bound, not fixable without native arm64 images.",
+    "severity": "medium",
+    "opened_at": "2026-07-24",
+    "status": "acknowledged",
+    "area": "TES / Plugins"
+  }
+]
