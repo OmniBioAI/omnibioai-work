@@ -1,5 +1,6 @@
 [
   {
+    "id": "f684a8be-1fe2-4666-b8b2-e8149409e659",
     "title": "GPU reports N/A for memory via nvidia-smi",
     "description": "nvidia-smi --query-gpu=memory.total,memory.used returns [N/A] on this GB10 unified-memory system, both from the host and from inside the control-center container post-GPU-passthrough. Utilization/temperature/power all report normally. Confirmed live via /gpu endpoint.",
     "severity": "medium",
@@ -8,6 +9,7 @@
     "area": "GPU / Infra"
   },
   {
+    "id": "8a4759e4-f779-4b83-b337-e7adbd20edd5",
     "title": "x86 tools run under QEMU emulation (ARM64 host)",
     "description": "amd64 plugin images and some training scripts run via qemu-binfmt emulation, not native -- observed as a single process pinned near 100% CPU. CPU-bound, not fixable without native arm64 images.",
     "severity": "medium",
@@ -16,14 +18,16 @@
     "area": "TES / Plugins"
   },
   {
+    "id": "58f93cbb-fdb9-4161-b768-4c9bc273dacb",
     "title": "No npm in control-center container -- CI/CD Health can't vuln-scan JS repos in production",
-    "description": "The control-center Dockerfile's Node/npm toolchain only exists in the separate frontend-builder build stage; the final backend runtime image never copies it in, so `which npm` fails inside the running container. _run_vuln_scan()'s npm-audit branch is correctly written but unreachable from the real report-generation path (the scheduler and POST /report/generate) -- the 4 npm-manifest repos (omnibioai-studio, omnibioai-design-tokens, omnibioai-ui, omnibioai-launcher) always show vuln_count=None (\"--\") when scanned in-container, even though npm audit works fine when run manually on a host that has npm. pip-audit scanning for the 21 Python repos is unaffected and was fixed separately. Not fixed as part of that fix -- needs its own Dockerfile/build-stage change (e.g. installing npm in the backend stage, or copying a minimal node/npm from the frontend-builder stage) as deliberate follow-up work.",
+    "description": "Fixed: added nodejs+npm to the control-center Dockerfile's backend stage (Debian trixie's own repo ships nodejs 20.19.2, matching the frontend-builder stage's node:20 major version -- no third-party NodeSource script needed). Rebuilt and redeployed the image (~170MB size delta, 4.78GB -> 4.95GB). Verified npm 9.2.0/node v20.19.2 present in the running container, confirmed `npm audit --json` runs correctly against a real repo (omnibioai-studio: 24 real vulnerabilities returned), and confirmed via a live report regeneration that the CI/CD Health tab now shows real vuln_count numbers for all 4 npm-manifest repos instead of the previous None/\"--\" state: omnibioai-studio=24, omnibioai-design-tokens=0, omnibioai-ui=10, omnibioai-launcher=37.",
     "severity": "low",
     "opened_at": "2026-07-25",
-    "status": "open",
+    "status": "resolved",
     "area": "CI/CD Health / Infra"
   },
   {
+    "id": "df88ae54-5a13-4b13-87ae-c70b07199487",
     "title": "audit:events entries with endpoint=http://testserver/... predating 2026-07-25 are test-suite artifacts, not real traffic",
     "description": "Investigated a repeated upstream_forward(deny/500) -> request(allow/200) pattern for the same trace_id in audit:events (e.g. trace_ids e0dfd723, 82d2d69f), all on GET workbench/ and GET workbench/ping. Root cause: omnibioai-api-gateway's route handler (app/routes/gateway.py) returned a bare dict as the response body, which FastAPI always serializes as HTTP 200 regardless of the real upstream status -- so a genuinely failing/unreachable upstream was both (a) returned to real callers as a 200 with the error hidden in the body, and (b) logged twice with contradictory status codes (upstream_forward carried the true 500, request carried the masked 200), 0-15ms apart, same trace_id. Separately, the entire 210-event sample of this pattern (2026-06-16 through 2026-07-19) turned out to be omnibioai-api-gateway's own pytest suite (tests/test_gateway_router.py and friends) writing into this same shared Redis stream: the test fixtures never mocked ProxyClient.forward() or the audit Redis client, so every local/CI test run made a real (failing) network call to an unreachable 'workbench' host and logged real entries under endpoint=http://testserver/... (the hostname Starlette's TestClient uses). Both root causes are now fixed in omnibioai-api-gateway (commits: gateway status-code propagation via JSONResponse(content=response, status_code=status); test isolation via an autouse conftest fixture mocking both ProxyClient.forward and the audit Redis client). Historical entries before the fix were left in place per instruction -- do not treat pre-2026-07-25 testserver-hostname entries in audit:events as evidence of real gateway/workbench incidents.",
     "severity": "low",
@@ -32,11 +36,147 @@
     "area": "API Gateway / Audit Trail"
   },
   {
+    "id": "8c07c42a-280e-4142-9f66-2ef9f31ddc5a",
     "title": "policy-engine crashes on cached policy decisions (PolicyDecision() duplicate 'policy_source' kwarg)",
-    "description": "Discovered incidentally while validating the api-gateway upstream_forward fix against the live stack: issuing the same user+action policy evaluation twice within the cache TTL causes omnibioai-policy-engine's app/core/engine.py evaluate() to raise `TypeError: app.models.decision.PolicyDecision() got multiple values for keyword argument 'policy_source'` at `PolicyDecision(**cached, policy_source=\"CACHE\")` (the cached dict already contains a policy_source key). policy-engine returns HTTP 500 for /policy/evaluate on the cache-hit path; the gateway's PolicyClient.evaluate() catches the exception and fails closed with {\"allowed\": false, \"reason\": \"policy_error\"}, so the real symptom at the gateway is a spurious 403 forbidden/policy_error on requests that should be allowed, specifically on repeat requests to the same resource. Not fixed -- out of scope for the api-gateway work in progress. Needs a fix in omnibioai-policy-engine's cache-read path (likely just dropping policy_source from the cached dict before re-adding it, or not re-passing it at all).",
+    "description": "Discovered incidentally while validating the api-gateway upstream_forward fix against the live stack: issuing the same user+action policy evaluation twice within the cache TTL caused omnibioai-policy-engine's app/core/engine.py evaluate() to raise `TypeError: app.models.decision.PolicyDecision() got multiple values for keyword argument 'policy_source'` at `PolicyDecision(**cached, policy_source=\"CACHE\")` (the cached dict already contains a policy_source key, since it's a previously stored decision.dict()). policy-engine returned HTTP 500 for /policy/evaluate on the cache-hit path; the gateway's PolicyClient.evaluate() caught the exception and failed closed with {\"allowed\": false, \"reason\": \"policy_error\"}, so the real symptom at the gateway was a spurious 403 forbidden/policy_error on requests that should be allowed, specifically on repeat requests to the same resource. Fixed: PolicyDecision(**{**cached, \"policy_source\": \"CACHE\"}) overrides the key instead of passing it twice. Also note for future debugging in this repo: engine.py ships as a committed Cython extension (setup.py, \"IP protection\") -- the compiled .so shadows .py edits whenever its build tag matches the interpreter (it did on this host, Python 3.13; it didn't in the deployed container, Python 3.11 vs a committed cpython-313-tagged .so, which is why the container was actually running the plain buggy .py). Fixing engine.py alone isn't enough locally -- rerun `python setup.py build_ext --inplace` after any edit to a cythonized module or local tests will silently keep exercising the stale compiled version. Regression test added (test_evaluate_cache_hit_after_miss_does_not_raise, a real cache store->retrieve round trip, not a static mock) and validated live against the running container (reproduced the 500 with two identical POST /policy/evaluate calls, then confirmed the fix resolves it the same way).",
     "severity": "medium",
     "opened_at": "2026-07-25",
-    "status": "open",
+    "status": "resolved",
     "area": "Policy Engine"
+  },
+  {
+    "id": "6a42e669-6fdb-447a-abbc-bdcccc37713c",
+    "title": "/auth/login has zero audit trail",
+    "description": "nginx proxies /auth/* straight to auth-service, bypassing api-gateway's AuditMiddleware entirely -- so there is no IP-level or attempt-level audit record for login attempts anywhere in the ecosystem (confirmed during the 2026-07-25 admin@omnibioai/admin default-credential incident: could not determine from any available log whether the exposed credential had actually been exploited). Needs deliberate design before fixing -- what to log, where, without creating a new PII/security concern in the audit stream itself -- not a quick patch. Candidate approaches: a lightweight audit hook inside auth-service itself (since traffic never reaches the gateway), or routing /auth/* through the gateway instead of proxying it directly.",
+    "severity": "medium",
+    "opened_at": "2026-07-26",
+    "status": "open",
+    "area": "Auth / Audit Trail"
+  },
+  {
+    "id": "97cccfdd-e8e2-4546-9c3f-dc128f5ad1be",
+    "title": "[cron-health:mysql-backup] MySQL Backup looks unhealthy",
+    "description": "Detected by the cron-health-check self-check. Job 'mysql-backup' (MySQL Backup): log file at work/backups/omnibioai-backup.log does not exist -- job has no recorded run at all. Configured schedule: '0 4 * * *'. Last known good run: never (no run on record).",
+    "severity": "high",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "Cron / Ops"
+  },
+  {
+    "id": "82452a77-b3a9-4d93-baac-b9e1a675e4ed",
+    "title": "[cron-health:coverage-nightly] Coverage Collection looks unhealthy",
+    "description": "Detected by the cron-health-check self-check. Job 'coverage-nightly' (Coverage Collection): log file at work/backups/omnibioai-coverage.log does not exist -- job has no recorded run at all. Configured schedule: '0 2 * * *'. Last known good run: never (no run on record).",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "Cron / Ops"
+  },
+  {
+    "id": "18d95918-3f63-4a18-a74c-3ed5fe5492a3",
+    "title": "[cron-health:pubmed-sync] PubMed Sync looks unhealthy",
+    "description": "Detected by the cron-health-check self-check during its own live validation on 2026-07-27: pubmed-syncs log file was deliberately renamed aside for ~2 minutes to verify detection worked, then restored. GET /cron/jobs confirms pubmed-sync is healthy again (last_status=ok). No real pubmed-sync problem -- this was a controlled test of the new cron-health-check job, not a production incident.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Cron / Ops"
+  },
+  {
+    "id": "00e2cc7e-287d-426b-afdf-a81a4696f630",
+    "title": "[cron-health:cron-health-check] Cron Health Check looks unhealthy",
+    "description": "False positive from a self-referential bug in check_cron_health.py during initial live-validation testing: the script tagged lines reporting OTHER jobs problems as [ERROR], which GET /cron/jobs generic substring(error) tail-scan then read back as cron-health-check own run having failed -- a healthy self-check correctly reporting bad news about a peer job looked identical to a real self-crash. Fixed by tagging peer-problem lines [ISSUE] instead, reserving [ERROR] for this scripts own genuine uncaught exceptions. Re-verified live: GET /cron/jobs now reports cron-health-check as last_status=ok even while it is actively flagging mysql-backup and coverage-nightly as unhealthy.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Cron / Ops"
+  },
+  {
+    "id": "473a99d4-ec41-49a5-98ab-985224c20906",
+    "title": "[disk-space:omnibioai-sifs] OmniBioAI-SIFs drive at 93% used (WARNING)",
+    "description": "Detected by the disk-space-check self-check. OmniBioAI-SIFs drive (/media/manish/OmniBioAI-SIFs) is at 93% used, crossing the warning threshold (85%). `df -h` output at detection time:\n\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/sdb1       1.9T  1.7T  132G  93% /media/manish/OmniBioAI-SIFs",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "Disk / Infra"
+  },
+  {
+    "id": "3a0e0554-a3c1-440a-9019-018228cdc008",
+    "title": "[disk-space:root] Root filesystem (/) at 72% used (WARNING)",
+    "description": "Detected by the disk-space-check self-check. Root filesystem (/) (/) is at 72% used, crossing the warning threshold (10%). `df -h` output at detection time:\n\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/nvme0n1p2  3.7T  2.5T 1018G  72% /\n\nAuto-resolved by disk-space-check: usage dropped to 72% (below the 85% warning threshold) as of 2026-07-27T01:23:28+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Disk / Infra"
+  },
+  {
+    "id": "df7186c5-404d-425d-a573-5b9b997a8065",
+    "title": "[disk-space:omnibioai-data] omnibioai-data drive at 62% used (WARNING)",
+    "description": "Detected by the disk-space-check self-check. omnibioai-data drive (/media/manish/omnibioai-data) is at 62% used, crossing the warning threshold (10%). `df -h` output at detection time:\n\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/sda1       1.8T  1.1T  669G  62% /media/manish/omnibioai-data\n\nAuto-resolved by disk-space-check: usage dropped to 62% (below the 85% warning threshold) as of 2026-07-27T01:23:28+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Disk / Infra"
+  },
+  {
+    "id": "f14b39b2-5d04-421c-a81a-50b98a4a08b4",
+    "title": "[domain-health:app] Legacy app domain (app.omnibioai.org) is unreachable",
+    "description": "Detected by the domain-health-check self-check. Legacy app domain (app.omnibioai.org) (app.omnibioai.org) failed a real HTTPS connection attempt: DNS resolution failed: [Errno -2] Name or service not known. This is a live reachability failure, not a certificate issue -- treated as high severity regardless of any prior cert status.",
+    "severity": "high",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "Domains / SSL"
+  },
+  {
+    "id": "21a77a46-2b5e-4ec3-9529-5760b7947113",
+    "title": "[domain-health:webstudio] Web Studio (webstudio.omnibioai.org) cert expires in 40d (WARNING)",
+    "description": "Detected by the domain-health-check self-check. Web Studio (webstudio.omnibioai.org) (webstudio.omnibioai.org)'s TLS certificate expires 2026-09-06T00:06:50+00:00 (40 days from now), crossing the warning threshold (50 days). Domain is still reachable (HTTP 302).\n\nAuto-resolved by domain-health-check: webstudio.omnibioai.org is reachable (HTTP 302) with 40 days left on its cert (above the 30-day warning threshold) as of 2026-07-27T01:32:50+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Domains / SSL"
+  },
+  {
+    "id": "5468cf7d-4d4b-4b12-9060-53171913fb25",
+    "title": "[domain-health:control] Control Center dashboard (control.omnibioai.org) cert expires in 40d (WARNING)",
+    "description": "Detected by the domain-health-check self-check. Control Center dashboard (control.omnibioai.org) (control.omnibioai.org)'s TLS certificate expires 2026-09-06T00:06:50+00:00 (40 days from now), crossing the warning threshold (50 days). Domain is still reachable (HTTP 200).\n\nAuto-resolved by domain-health-check: control.omnibioai.org is reachable (HTTP 200) with 40 days left on its cert (above the 30-day warning threshold) as of 2026-07-27T01:32:50+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Domains / SSL"
+  },
+  {
+    "id": "f8809743-8912-4771-bce0-a07c8c2e7095",
+    "title": "[domain-health:apex] Apex/marketing domain (omnibioai.org) cert expires in 41d (WARNING)",
+    "description": "Detected by the domain-health-check self-check. Apex/marketing domain (omnibioai.org) (omnibioai.org)'s TLS certificate expires 2026-09-06T18:03:45+00:00 (41 days from now), crossing the warning threshold (50 days). Domain is still reachable (HTTP 200).\n\nAuto-resolved by domain-health-check: omnibioai.org is reachable (HTTP 200) with 41 days left on its cert (above the 30-day warning threshold) as of 2026-07-27T01:32:50+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Domains / SSL"
+  },
+  {
+    "id": "c4a693d1-28eb-4bff-b073-9fe6db16cc78",
+    "title": "[domain-health:lims] LIMS (lims.omnibioai.org) cert expires in 40d (WARNING)",
+    "description": "Detected by the domain-health-check self-check. LIMS (lims.omnibioai.org) (lims.omnibioai.org)'s TLS certificate expires 2026-09-06T00:06:50+00:00 (40 days from now), crossing the warning threshold (50 days). Domain is still reachable (HTTP 200).\n\nAuto-resolved by domain-health-check: lims.omnibioai.org is reachable (HTTP 200) with 40 days left on its cert (above the 30-day warning threshold) as of 2026-07-27T01:32:50+00:00.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "resolved",
+    "area": "Domains / SSL"
+  },
+  {
+    "id": "e4cde24d-21df-4ea7-b36f-9a3c6cc29423",
+    "title": "Follow-up: nginx X-Forwarded-Proto not preserved end-to-end for LIMS (SECURE_SSL_REDIRECT disabled as a workaround)",
+    "description": "While fixing DJANGO_DEBUG=true in prod LIMS (2026-07-27), turning DEBUG off activated Django SECURE_SSL_REDIRECT (default: not DEBUG), which caused a redirect loop for all LIMS traffic through nginx-router -> lims. Root cause: both nginx-router (/_svc/lims location block) and the LIMS container internal nginx set proxy_set_header X-Forwarded-Proto $scheme using their own local connection scheme (always http, since neither terminates TLS), clobbering any real X-Forwarded-Proto set by a genuine upstream TLS terminator. As a stopgap, DJANGO_SECURE_SSL_REDIRECT=false was set explicitly in both docker-compose.yml and docker-compose.release.yml for the lims service to unblock traffic. NOT urgent tonight, but should be properly fixed: confirm the actual TLS-termination architecture in front of nginx-router (is Cloudflare Tunnel the sole trusted proxy in this chain?), confirm what X-Forwarded-Proto value it actually sends, and update both nginx configs to trust and forward that value instead of overwriting it with $scheme -- then re-enable DJANGO_SECURE_SSL_REDIRECT.\n\nUPDATE (2026-07-27): omnibioai-control-center/backend/src/control_center/api/routes_auth_proxy.py (uncommitted, \"Option B\" fix for the Admin tabs auth calls) has a comment confirming Cloudflare Tunnel is a real, live ingress mechanism -- control.omnibioai.org routes directly Tunnel-to-service into control-center:7070, bypassing nginx-router entirely. This does not resolve the LIMS case directly (LIMS traffic goes through nginx-router, a different path from a different domain), but is useful supporting context for confirming the broader Tunnel architecture when someone investigates the LIMS-specific X-Forwarded-Proto fix.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "lims"
+  },
+  {
+    "id": "f60cf17a-86d8-4820-a74d-c0e9a39f7743",
+    "title": "Stale docker-compose-release.yml (no dot) duplicates docker-compose.release.yml at the old insecure DEBUG=true/0.0.0.0 state",
+    "description": "docker-compose-release.yml (no dot before \"release\") is a separate, git-tracked file sitting alongside the actively-used docker-compose.release.yml, at omnibioai-studio repo root. Confirmed via diff (2026-07-27): it is stale -- last touched at commit 370bda6, still at SENTRY_RELEASE 0.4.0-beta (vs 0.6.0-beta in the real file), still has DJANGO_DEBUG: \"true\" for lims, still has the unrestricted \"${HOST_IP:-0.0.0.0}:7000:7000\" and \"80:80\" port bindings that were just fixed in docker-compose.release.yml as part of tonight's DEBUG/redirect-loop/port-exposure fix (commit 951ad25 and follow-up). Naming collision risk: anyone running `docker compose -f docker-compose-release.yml up` (easy typo/mixup with the real docker-compose.release.yml, or an out-of-date deploy script/muscle-memory referencing the old filename) would silently redeploy the OLD insecure state -- DEBUG=true, LIMS/nginx-router ports exposed to 0.0.0.0, no FIELD_ENCRYPTION_KEY wiring. Needs either deletion (if truly obsolete) or reconciliation with docker-compose.release.yml (if it serves a distinct, still-needed purpose) -- someone with context on why two near-duplicate release compose files exist should decide which.",
+    "severity": "medium",
+    "opened_at": "2026-07-27",
+    "status": "open",
+    "area": "lims"
   }
 ]
