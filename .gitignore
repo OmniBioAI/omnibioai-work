@@ -47,3 +47,10 @@ object_registry.json
 object_storage/
 objects/
 out/
+backups/
+*.dump
+*.tar.gz.gpg
+backup_status.json
+cve_history.json
+known_issues.json
+unpushed_work.json
