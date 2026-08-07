@@ -1,9 +1,9 @@
 [
   {
     "target": "omnibioai-data",
-    "last_backup_at": "2026-07-27T05:20:29Z",
+    "last_backup_at": "2026-08-06T07:05:39Z",
     "status": "failed",
-    "size_mb": 1153736.0,
+    "size_mb": 1248964.0,
     "destination": "/media/manish/omnibioai-data"
   }
 ]
