@@ -18,6 +18,13 @@ omnibioai-work/
 ├── storage/                  # Persistent storage (not tracked)
 ├── object_storage/           # Object storage (not tracked)
 ├── objects/                  # Runtime objects (not tracked)
+├── videos/                    # Video processing scratch space (not tracked)
+├── backups/                   # Destination for omnibioai-utils' scheduled backup scripts
+│   ├── config/                 # (not tracked)
+│   ├── neo4j/                  # (not tracked)
+│   └── system-state/           # Daily output of backup-system-state.sh (.env,
+│                                # cloudflared, systemd, crontab) — see
+│                                # omnibioai-utils' README
 └── object_registry.json      # Object registry index
 ```
 
@@ -62,3 +69,4 @@ bash cleanup.sh
 - [`omnibioai-tes`](../omnibioai-tes) — task execution service that writes to `runs/`
 - [`omnibioai-workflow-bundles`](../omnibioai-workflow-bundles) — workflows that write to `workflow_runner_runs/`
 - [`omnibioai-data`](../omnibioai-data) — input data directory
+- [`omnibioai-utils`](../omnibioai-utils) — `backup-system-state.sh` writes into `backups/system-state/`
