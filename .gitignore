@@ -10,6 +10,11 @@ storage/*
 object_storage/*
 objects/*
 
+# Local/generated operational state
+backup_status.json
+unpushed_work.json
+cve_history.json
+
 # Keep directory structure
 !**/.gitkeep
 
